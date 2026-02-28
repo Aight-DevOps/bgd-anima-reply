@@ -6,17 +6,99 @@ Airtable に蓄積された X（旧 Twitter）の相互フォロワーへのリ�
 
 ## 目次
 
-1. [仕組みの概要](#仕組みの概要)
-2. [前提条件](#前提条件)
-3. [Airtable テーブル構造](#airtable-テーブル構造)
-4. [インストール](#インストール)
-5. [設定](#設定)
-6. [初回セットアップ（X へのログイン）](#初回セットアップx-へのログイン)
-7. [手動実行](#手動実行)
-8. [スケジュール自動実行](#スケジュール自動実行)
-9. [ファイル構成](#ファイル構成)
-10. [ログの確認](#ログの確認)
-11. [トラブルシューティング](#トラブルシューティング)
+1. [別PCへのセットアップ（クイックスタート）](#別pcへのセットアップクイックスタート)
+2. [仕組みの概要](#仕組みの概要)
+3. [前提条件](#前提条件)
+4. [Airtable テーブル構造](#airtable-テーブル構造)
+5. [インストール](#インストール)
+6. [設定](#設定)
+7. [初回セットアップ（X へのログイン）](#初回セットアップx-へのログイン)
+8. [手動実行](#手動実行)
+9. [スケジュール自動実行](#スケジュール自動実行)
+10. [ファイル構成](#ファイル構成)
+11. [ログの確認](#ログの確認)
+12. [トラブルシューティング](#トラブルシューティング)
+
+---
+
+## 別PCへのセットアップ（クイックスタート）
+
+新しいPCで動かすまでの手順を順番にまとめます。
+
+### ステップ 1 ── 前提ソフトウェアのインストール
+
+- [Python 3.10 以上](https://www.python.org/downloads/)
+- [Google Chrome](https://www.google.com/chrome/)
+- [Git](https://git-scm.com/)
+
+### ステップ 2 ── リポジトリをクローン
+
+```bash
+git clone https://github.com/Aight-DevOps/bgd-anima-reply.git
+cd bgd-anima-reply
+```
+
+### ステップ 3 ── 依存パッケージをインストール
+
+```bash
+pip install pyairtable playwright schedule python-dotenv
+playwright install chromium
+```
+
+### ステップ 4 ── 環境変数（.env）を設定
+
+```bash
+cp .env.example .env
+```
+
+テキストエディタで `.env` を開き、実際の値を入力します。
+
+```ini
+AIRTABLE_TOKEN=patXXXXXXXXXXXXXX.XXXXXXXX...   # Airtable Personal Access Token
+AIRTABLE_BASE_ID=appXXXXXXXXXXXXXX             # Airtable Base ID
+```
+
+各値の取得方法は [設定](#設定) セクションを参照してください。
+
+### ステップ 5 ── X（Twitter）へのログイン状態を保存
+
+```bash
+python anima_reply.py --setup-auth
+```
+
+ブラウザが開くので X にログインします。ホーム画面が表示されると自動的に認証状態が保存されます。
+
+### ステップ 6 ── 動作確認（1件だけテスト実行）
+
+```bash
+python anima_reply.py --today --limit 1 --visible
+```
+
+ブラウザが開き、リプライが送信されれば成功です。
+
+### ステップ 7 ── スケジューラを自動起動に登録（Windows）
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "
+\$WshShell = New-Object -ComObject WScript.Shell
+\$Shortcut = \$WshShell.CreateShortcut((Join-Path ([System.Environment]::GetFolderPath('Startup')) 'AnimaReplyBot.lnk'))
+\$Shortcut.TargetPath       = (Get-Command python).Source
+\$Shortcut.Arguments        = '\$PWD\scheduler.py'
+\$Shortcut.WorkingDirectory = '\$PWD'
+\$Shortcut.WindowStyle      = 7
+\$Shortcut.Save()
+Write-Host '登録完了'
+"
+```
+
+または `register_startup.ps1` 内の Python パスとリポジトリパスを書き換えてから実行：
+
+```powershell
+# register_startup.ps1 を編集して実行
+powershell -ExecutionPolicy Bypass -File register_startup.ps1
+```
+
+以降は PC にログインするたびに `scheduler.py` がバックグラウンドで自動起動します。
 
 ---
 
