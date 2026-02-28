@@ -1,0 +1,26 @@
+# 認証情報・シークレット（Gitに含めない）
+.env
+auth_state.json
+
+# ロックファイル
+.running
+
+# ログファイル
+*.log
+task_log.txt
+reply_log.txt
+
+# デバッグ
+debug_screenshot.png
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+.claude/
