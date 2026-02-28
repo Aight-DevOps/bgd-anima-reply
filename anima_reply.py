@@ -16,6 +16,7 @@ Playwright を使って X (旧 Twitter) へ自動返信するスクリプト。
 
 import asyncio
 import random
+import re
 import argparse
 import sys
 import io
@@ -54,6 +55,14 @@ WAIT_BEFORE_SUBMIT_MIN = 2
 WAIT_BEFORE_SUBMIT_MAX = 4
 WAIT_BETWEEN_REPLY_MIN = 60
 WAIT_BETWEEN_REPLY_MAX = 120
+# いいね待機時間設定（秒）
+# リプライ送信前、ランダムな時間待機してからいいねする（人間らしい操作に見せるため）
+WAIT_BEFORE_REPLY_LIKE_MIN       = 3
+WAIT_BEFORE_REPLY_LIKE_MAX       = 8
+WAIT_LIKE_PAGE_LOAD_MIN          = 3
+WAIT_LIKE_PAGE_LOAD_MAX          = 7
+WAIT_BEFORE_LIKE_CLICK_MIN       = 1
+WAIT_BEFORE_LIKE_CLICK_MAX       = 3
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -256,6 +265,75 @@ async def reply_to_tweet(page, reply_url: str, reply_text: str) -> str:
     return "SKIP"
 
 
+async def like_tweet(page, tweet_id: str) -> bool:
+    """
+    指定した tweet_id のツイートにいいねをする。
+    人間らしい操作に見せるため、ランダムな待機時間を設けてからいいねる。
+
+    戻り値:
+      True  : いいね成功
+      False : いいね失敗・スキップ
+    """
+    tweet_url = f"https://x.com/i/web/status/{tweet_id}"
+    print(f"  → [いいね] ツイートページへ移動: {tweet_url}")
+
+    try:
+        await page.goto(tweet_url, wait_until="domcontentloaded", timeout=30_000)
+    except Exception as e:
+        print(f"  ✗ [いいね] ページ移動エラー: {e}")
+        return False
+
+    # ─ ページ読み込み後の待機（人間らしくランダムに）─
+    wait_load = random.uniform(WAIT_LIKE_PAGE_LOAD_MIN, WAIT_LIKE_PAGE_LOAD_MAX)
+    print(f"  … [いいね] ページ読み込み待機 {wait_load:.1f}s")
+    await asyncio.sleep(wait_load)
+
+    # ─ ログインページへのリダイレクト検出 ─
+    if "login" in page.url or "flow/login" in page.url:
+        print("  ✗ [いいね] ログインページにリダイレクト → 認証状態が無効です")
+        return False
+
+    # ─ ポスト削除・利用不可チェック ─
+    if await is_post_unavailable(page):
+        print("  ✗ [いいね] ポストが削除または利用不可のため SKIP")
+        return False
+
+    # ─ いいねボタンを探してクリック ─
+    # まだいいねしていない場合は aria-label に "Like" が含まれる
+    # 既にいいね済みの場合は aria-label に "Unlike" が含まれる
+    like_selector = '[data-testid="like"]'
+    already_liked_selector = '[data-testid="unlike"]'
+
+    # クリック前に少し待機（より自然な操作感のため）
+    wait_before_click = random.uniform(WAIT_BEFORE_LIKE_CLICK_MIN, WAIT_BEFORE_LIKE_CLICK_MAX)
+    print(f"  … [いいね] クリック前待機 {wait_before_click:.1f}s")
+    await asyncio.sleep(wait_before_click)
+
+    # 既にいいね済みか確認
+    try:
+        already = await page.wait_for_selector(already_liked_selector, timeout=3_000)
+        if already:
+            print("  ✓ [いいね] 既にいいね済みのためスキップ")
+            return True
+    except PlaywrightTimeoutError:
+        pass
+
+    # いいねボタンをクリック
+    try:
+        btn = await page.wait_for_selector(like_selector, timeout=10_000)
+        if btn:
+            await btn.click()
+            print("  ✓ [いいね] いいね完了")
+            await asyncio.sleep(random.uniform(1.0, 2.0))
+            return True
+    except PlaywrightTimeoutError:
+        print("  ✗ [いいね] いいねボタンが見つかりません")
+    except Exception as e:
+        print(f"  ✗ [いいね] クリックエラー: {e}")
+
+    return False
+
+
 # ── メイン処理 ────────────────────────────────────────────────────────────────
 
 async def main(headless: bool, limit: int, today_only: bool):
@@ -330,6 +408,24 @@ async def main(headless: bool, limit: int, today_only: bool):
                 update_airtable_status(table, record_id, "SKIP")
                 skipped += 1
                 continue
+
+            # ─ リプライ前にいいねをつける ─
+            # ReplyLink から tweet_id を抽出する
+            # 形式例: https://x.com/intent/post?in_reply_to=1234567890
+            #      or: https://twitter.com/intent/tweet?in_reply_to=1234567890
+            m = re.search(r"in_reply_to=([0-9]+)", reply_url)
+            if m:
+                tweet_id = m.group(1)
+                # リプライ送信前、人間らしいランダム待機を挟んでからいいね
+                wait_before_like = random.uniform(
+                    WAIT_BEFORE_REPLY_LIKE_MIN,
+                    WAIT_BEFORE_REPLY_LIKE_MAX,
+                )
+                print(f"\n  … [いいね] リプライ前待機 {wait_before_like:.1f}s してからいいね開始...")
+                await asyncio.sleep(wait_before_like)
+                await like_tweet(page, tweet_id)
+            else:
+                print("  ⚠ [いいね] ReplyLink から tweet_id が取得できないためいいねをスキップ")
 
             result = await reply_to_tweet(page, reply_url, reply_text)
             update_airtable_status(table, record_id, result)
