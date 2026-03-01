@@ -41,9 +41,13 @@ echo ""
 echo "[2] 仮想環境を作成しますか？ (y/N)"
 read -r CREATE_VENV
 if [[ "$CREATE_VENV" =~ ^[Yy]$ ]]; then
-    $PYTHON -m venv .venv
+    # venv 作成を試みる（失敗時は python3-venv をインストールしてリトライ）
+    if ! $PYTHON -m venv .venv 2>/dev/null; then
+        echo "  python3-venv が不足しています。インストールします..."
+        sudo apt-get install -y python3-venv python3-full
+        $PYTHON -m venv .venv
+    fi
     echo "  仮想環境を作成しました: .venv/"
-    # WSL/Linux と Windows bash 両対応
     # shellcheck disable=SC1091
     source .venv/bin/activate 2>/dev/null || source .venv/Scripts/activate 2>/dev/null || true
     echo "  仮想環境を有効化しました。"
